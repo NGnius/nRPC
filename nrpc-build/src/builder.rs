@@ -6,14 +6,17 @@ use prost_build::Config;
 use prost_build::{Service, ServiceGenerator};
 use prost_types::FileDescriptorSet;
 
+use super::Preprocessor;
+
 /// Proto -> Rust transpiler configurator
-pub struct Transpiler {
+pub struct Transpiler<'a> {
     prost_config: Config,
     files: FileDescriptorSet,
     service_generator: MergedServiceGenerator,
+    preprocessors: Vec<Box<dyn Preprocessor + 'a>>,
 }
 
-impl Transpiler {
+impl<'a> Transpiler<'a> {
     pub fn new(
         files: impl IntoIterator<Item = impl AsRef<Path>>,
         includes: impl IntoIterator<Item = impl AsRef<Path>>
@@ -21,7 +24,8 @@ impl Transpiler {
         Ok::<_, protox::Error>(Self {
             prost_config: Config::new(),
             files: protox::compile(files, includes)?,
-            service_generator: MergedServiceGenerator::empty()
+            service_generator: MergedServiceGenerator::empty(),
+            preprocessors: Vec::new(),
         })
     }
 
@@ -49,11 +53,34 @@ impl Transpiler {
         self
     }
 
+    /// Add a proto file descriptor preprocessor
+    pub fn with_preprocessor<P: Preprocessor + 'a>(mut self, pp: P) -> Self {
+        self.preprocessors.push(Box::new(pp));
+        self
+    }
+
     /// Actually generate code
     pub fn transpile(mut self) -> std::io::Result<()> {
+        let mut files = self.files;
+        let mut generated = String::new();
+        for mut pp in self.preprocessors {
+            pp.process(&mut files, &mut generated);
+        }
+        self.service_generator.add_service(PreprocessedCodeGenInjector { generated_str: generated });
+
         self.prost_config
             .service_generator(Box::new(self.service_generator))
-            .compile_fds(self.files)
+            .compile_fds(files)
+    }
+}
+
+struct PreprocessedCodeGenInjector {
+    generated_str: String,
+}
+
+impl ServiceGenerator for PreprocessedCodeGenInjector {
+    fn generate(&mut self, _: Service, buf: &mut String) {
+        buf.insert_str(0, &self.generated_str);
     }
 }
 
