@@ -7,10 +7,10 @@ edition = "2021"
 
 [dependencies]
 prost = "0.11"
-nrpc = { version = "0.1", path = "../nrpc" }
+nrpc = { version = "*", path = "../nrpc" }
 bytes = "1"
 async-trait = "0.1"
 tokio = { version = "*", features = [ "full" ] }
 
 [build-dependencies]
-nrpc-build = { version = "0.1", path = "../nrpc-build" }
+nrpc-build = { version = "*", path = "../nrpc-build" }
