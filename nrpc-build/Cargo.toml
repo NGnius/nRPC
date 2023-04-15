@@ -13,6 +13,7 @@ description = "Yet another remote procedure call library - codegen"
 # gRPC/protobuf
 protox = "0.3"
 prost-build = "0.11"
+prost-types = "0.11"
 
 # code gen
 prettyplease = "0.2"
