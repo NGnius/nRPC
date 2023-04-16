@@ -290,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "nrpc-build"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "nrpc",
  "prettyplease 0.2.4",
