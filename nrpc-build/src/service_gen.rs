@@ -4,6 +4,8 @@ use quote::quote;
 pub(crate) struct ProtobufServiceGenerator {
     generate_server: bool,
     generate_client: bool,
+    client_reexports: Vec<proc_macro2::TokenStream>,
+    server_reexports: Vec<proc_macro2::TokenStream>,
 }
 
 impl ProtobufServiceGenerator {
@@ -11,6 +13,8 @@ impl ProtobufServiceGenerator {
         Self {
             generate_server: true,
             generate_client: true,
+            client_reexports: Vec::new(),
+            server_reexports: Vec::new(),
         }
     }
 
@@ -18,6 +22,8 @@ impl ProtobufServiceGenerator {
         Self {
             generate_server: false,
             generate_client: true,
+            client_reexports: Vec::new(),
+            server_reexports: Vec::new(),
         }
     }
 
@@ -25,6 +31,8 @@ impl ProtobufServiceGenerator {
         Self {
             generate_server: true,
             generate_client: false,
+            client_reexports: Vec::new(),
+            server_reexports: Vec::new(),
         }
     }
 }
@@ -125,6 +133,8 @@ impl ServiceGenerator for ProtobufServiceGenerator {
             let service_trait_methods = trait_methods_server(&service.methods);
             let service_struct_name = quote::format_ident!("{}ServiceImpl", service.name);
             let descriptor_str = format!("{}.{}", service.package, service.name);
+            let service_struct_rename = quote::format_ident!("{}Server", service.name);
+            let service_trait_rename = quote::format_ident!("I{}", service.name);
             let gen_service = quote! {
                 mod #service_mod_name {
                     use super::*;
@@ -159,10 +169,14 @@ impl ServiceGenerator for ProtobufServiceGenerator {
                         }
                     }
                 }
-                pub mod server {
-                    pub use super::#service_mod_name::{#service_struct_name, #service_trait_name};
-                }
+                pub use #service_mod_name::{
+                    #service_struct_name as #service_struct_rename,
+                    #service_trait_name as #service_trait_rename,
+                };
             };
+            self.server_reexports.push(quote! {
+                pub use super::#service_mod_name::{#service_struct_name, #service_trait_name};
+            });
             let gen_code: syn::File = syn::parse2(gen_service).expect("invalid tokenstream");
             let code_str = prettyplease::unparse(&gen_code);
             buf.push_str(&code_str);
@@ -172,6 +186,7 @@ impl ServiceGenerator for ProtobufServiceGenerator {
             let service_methods = struct_methods_client(&service.name, &service.methods);
             let service_struct_name = quote::format_ident!("{}Service", service.name);
             let descriptor_str = format!("{}.{}", service.package, service.name);
+            let service_rename = quote::format_ident!("{}Client", service.name);
             let gen_client = quote! {
                 mod #service_mod_name {
                     use super::*;
@@ -198,13 +213,50 @@ impl ServiceGenerator for ProtobufServiceGenerator {
                         #service_methods
                     }
                 }
-                pub mod client {
-                    pub use super::#service_mod_name::#service_struct_name;
-                }
+                pub use #service_mod_name::#service_struct_name as #service_rename;
             };
+
+            self.client_reexports.push(quote! {
+                pub use super::#service_mod_name::#service_struct_name;
+            });
             let gen_code: syn::File = syn::parse2(gen_client).expect("invalid tokenstream");
             let code_str = prettyplease::unparse(&gen_code);
             buf.push_str(&code_str);
         }
+    }
+
+    fn finalize_package(&mut self, _package: &str, buf: &mut String) {
+        self.finalize(buf);
+    }
+
+    fn finalize(&mut self, buf: &mut String) {
+        let mut client_tokens = quote!{};
+        let mut server_tokens = quote!{};
+        if self.generate_client {
+            let exports = &self.client_reexports;
+            client_tokens = quote! {
+                pub mod client {
+                    #(#exports)*
+                }
+            };
+        }
+        if self.generate_server {
+            let exports = &self.server_reexports;
+            server_tokens = quote! {
+                pub mod server {
+                    #(#exports)*
+                }
+            };
+        }
+        let gen_code = quote! {
+            #client_tokens
+
+            #server_tokens
+
+            pub mod finally {}
+        };
+        let gen_code: syn::File = syn::parse2(gen_code).expect("invalid tokenstream");
+        let code_str = prettyplease::unparse(&gen_code);
+        buf.push_str(&code_str);
     }
 }

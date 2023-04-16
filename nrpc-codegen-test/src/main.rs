@@ -16,7 +16,7 @@ async fn main() {
         message: "Hello World".into(),
     };
     // server
-    let mut service_impl = helloworld::server::GreeterServiceImpl::new(GreeterService);
+    let mut service_impl = helloworld::GreeterServer::new(GreeterService);
     let mut input_buf = bytes::BytesMut::new();
     let mut output_buf = bytes::BytesMut::new();
     req.encode(&mut input_buf).unwrap();
@@ -25,7 +25,7 @@ async fn main() {
     assert_eq!(resp, actual_resp);
 
     // client
-    let mut client_impl = helloworld::client::GreeterService::new(ClientHandler);
+    let mut client_impl = helloworld::GreeterClient::new(ClientHandler);
     let resp = client_impl.say_hello(req).await.unwrap();
     assert_eq!(resp, actual_resp);
 }
@@ -33,7 +33,7 @@ async fn main() {
 struct GreeterService;
 
 #[async_trait::async_trait]
-impl helloworld::server::GreeterService for GreeterService {
+impl helloworld::IGreeter for GreeterService {
     async fn say_hello(&mut self, input: helloworld::HelloRequest) -> Result<helloworld::HelloReply, Box<dyn Error>> {
         let result = helloworld::HelloReply {
             message: format!("Hello {}", input.name),
