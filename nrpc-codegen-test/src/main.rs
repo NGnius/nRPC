@@ -48,11 +48,12 @@ struct ClientHandler;
 #[async_trait::async_trait]
 impl nrpc::ClientHandler for ClientHandler {
     async fn call(&mut self,
+            package: &str,
             service: &str,
             method: &str,
             input: bytes::Bytes,
             output: &mut bytes::BytesMut) -> Result<(), nrpc::ServiceError> {
-                println!("call {}/{} with data {:?}", service, method, input);
+                println!("call {}.{}/{} with data {:?}", package, service, method, input);
                 // This is ok to hardcode ONLY because it's for testing
                 Ok(helloworld::HelloReply {
                     message: "Hello World".into(),

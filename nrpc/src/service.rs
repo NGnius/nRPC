@@ -11,6 +11,7 @@ pub trait ServerService {
 #[async_trait::async_trait]
 pub trait ClientHandler {
     async fn call(&mut self,
+            package: &str,
             service: &str,
             method: &str,
             input: bytes::Bytes,

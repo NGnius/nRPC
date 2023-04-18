@@ -86,7 +86,7 @@ fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::
     }
 }
 
-fn struct_methods_client(service_name: &str, descriptors: &Vec<prost_build::Method>) -> proc_macro2::TokenStream {
+fn struct_methods_client(package_name: &str, service_name: &str, descriptors: &Vec<prost_build::Method>) -> proc_macro2::TokenStream {
     let mut gen_methods = Vec::with_capacity(descriptors.len());
     for descriptor in descriptors {
         match (descriptor.client_streaming, descriptor.server_streaming) {
@@ -101,7 +101,7 @@ fn struct_methods_client(service_name: &str, descriptors: &Vec<prost_build::Meth
                             let mut in_buf = ::nrpc::_helpers::bytes::BytesMut::new();
                             input.encode(&mut in_buf)?;
                             let mut out_buf = ::nrpc::_helpers::bytes::BytesMut::new();
-                            self.inner.call(#service_name, #method_name, in_buf.into(), &mut out_buf).await?;
+                            self.inner.call(#package_name, #service_name, #method_name, in_buf.into(), &mut out_buf).await?;
                             Ok(#output_ty::decode(out_buf)?)
                         }
                     }
@@ -183,7 +183,7 @@ impl ServiceGenerator for ProtobufServiceGenerator {
         }
         if self.generate_client {
             let service_mod_name = quote::format_ident!("{}_mod_client", service.name.to_lowercase());
-            let service_methods = struct_methods_client(&service.name, &service.methods);
+            let service_methods = struct_methods_client(&service.package, &service.name, &service.methods);
             let service_struct_name = quote::format_ident!("{}Service", service.name);
             let descriptor_str = format!("{}.{}", service.package, service.name);
             let service_rename = quote::format_ident!("{}Client", service.name);
