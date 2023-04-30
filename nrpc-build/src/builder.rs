@@ -21,6 +21,10 @@ impl<'a> Transpiler<'a> {
         files: impl IntoIterator<Item = impl AsRef<Path>>,
         includes: impl IntoIterator<Item = impl AsRef<Path>>
     ) -> Result<Self, impl std::error::Error> {
+        let files: Vec<_> = files.into_iter().collect();
+        for f in &files {
+            println!("cargo:rerun-if-changed={}", f.as_ref().display());
+        }
         Ok::<_, protox::Error>(Self {
             prost_config: Config::new(),
             files: protox::compile(files, includes)?,
@@ -31,19 +35,19 @@ impl<'a> Transpiler<'a> {
 
     /// Generate client and server service implementations
     pub fn generate_all(mut self) -> Self {
-        self.service_generator.add_service(super::ProtobufServiceGenerator::all());
+        self.service_generator.add_service(super::ProtobufServiceGenerator::all(std::env::var("OUT_DIR").unwrap().into()));
         self
     }
 
     /// Generate server services implementations
     pub fn generate_server(mut self) -> Self {
-        self.service_generator.add_service(super::ProtobufServiceGenerator::server());
+        self.service_generator.add_service(super::ProtobufServiceGenerator::server(std::env::var("OUT_DIR").unwrap().into()));
         self
     }
 
     /// Generate client services implementations
     pub fn generate_client(mut self) -> Self {
-        self.service_generator.add_service(super::ProtobufServiceGenerator::client());
+        self.service_generator.add_service(super::ProtobufServiceGenerator::client(std::env::var("OUT_DIR").unwrap().into()));
         self
     }
 

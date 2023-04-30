@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use prost_build::{Service, ServiceGenerator};
 use quote::quote;
 
@@ -6,33 +8,41 @@ pub(crate) struct ProtobufServiceGenerator {
     generate_client: bool,
     client_reexports: Vec<proc_macro2::TokenStream>,
     server_reexports: Vec<proc_macro2::TokenStream>,
+    modules: Vec<String>,
+    out_dir: PathBuf,
 }
 
 impl ProtobufServiceGenerator {
-    pub fn all() -> Self {
+    pub fn all(out_dir: PathBuf) -> Self {
         Self {
             generate_server: true,
             generate_client: true,
             client_reexports: Vec::new(),
             server_reexports: Vec::new(),
+            modules: Vec::new(),
+            out_dir: out_dir,
         }
     }
 
-    pub fn client() -> Self {
+    pub fn client(out_dir: PathBuf) -> Self {
         Self {
             generate_server: false,
             generate_client: true,
             client_reexports: Vec::new(),
             server_reexports: Vec::new(),
+            modules: Vec::new(),
+            out_dir: out_dir,
         }
     }
 
-    pub fn server() -> Self {
+    pub fn server(out_dir: PathBuf) -> Self {
         Self {
             generate_server: true,
             generate_client: false,
             client_reexports: Vec::new(),
             server_reexports: Vec::new(),
+            modules: Vec::new(),
+            out_dir: out_dir,
         }
     }
 }
@@ -123,6 +133,24 @@ fn struct_methods_client(package_name: &str, service_name: &str, descriptors: &V
     quote! {
         #(#gen_methods)*
     }
+}
+
+fn generate_mod_rs(module_names: &Vec<String>, out_dir: &PathBuf) {
+    // generate mod.rs
+    let modules = module_names.iter().map(|m| {
+        let mod_ident = quote::format_ident!("{}", m);
+        quote! { pub mod #mod_ident; }
+    });
+    let gen_mods: syn::File = syn::parse2(quote! {
+        #(#modules)*
+    }).expect("invalid tokenstream");
+    let mod_str = prettyplease::unparse(&gen_mods);
+    std::fs::write(
+        out_dir
+            .join("mod.rs"),
+        &mod_str
+    ).expect("Failed to write to $OUT_DIR/mod.rs");
+    //std::fs::write("/home/ngnius/potato.rs", &mod_str).unwrap();
 }
 
 impl ServiceGenerator for ProtobufServiceGenerator {
@@ -223,10 +251,10 @@ impl ServiceGenerator for ProtobufServiceGenerator {
             let code_str = prettyplease::unparse(&gen_code);
             buf.push_str(&code_str);
         }
-    }
-
-    fn finalize_package(&mut self, _package: &str, buf: &mut String) {
-        self.finalize(buf);
+        if !self.modules.contains(&service.package) {
+            self.modules.push(service.package.clone());
+            generate_mod_rs(&self.modules, &self.out_dir);
+        }
     }
 
     fn finalize(&mut self, buf: &mut String) {
@@ -258,5 +286,9 @@ impl ServiceGenerator for ProtobufServiceGenerator {
         let gen_code: syn::File = syn::parse2(gen_code).expect("invalid tokenstream");
         let code_str = prettyplease::unparse(&gen_code);
         buf.push_str(&code_str);
+
+        self.modules.clear();
+        self.client_reexports.clear();
+        self.server_reexports.clear();
     }
 }

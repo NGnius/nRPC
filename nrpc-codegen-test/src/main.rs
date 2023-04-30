@@ -3,9 +3,11 @@ use std::error::Error;
 use prost::Message;
 use nrpc::ServerService;
 
-pub mod helloworld {
-    include!(concat!(env!("OUT_DIR"), "/helloworld.rs"));
+pub mod generated {
+    include!(concat!(env!("OUT_DIR"), "/mod.rs"));
 }
+
+pub use generated::*;
 
 #[tokio::main]
 async fn main() {
