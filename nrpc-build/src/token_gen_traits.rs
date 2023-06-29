@@ -1,6 +1,6 @@
+use proc_macro2::TokenStream;
 use prost_build::Service;
 use prost_types::FileDescriptorSet;
-use proc_macro2::TokenStream;
 
 /// Higher-level abstraction of prost_build::ServiceGenerator
 pub trait IServiceGenerator {
@@ -33,7 +33,8 @@ impl<X> std::convert::From<X> for AbstractImpl<X> {
 
 impl<X: IServiceGenerator> prost_build::ServiceGenerator for AbstractImpl<X> {
     fn generate(&mut self, service: Service, buf: &mut String) {
-        let gen_code: syn::File = syn::parse2(self.0.generate(service)).expect("invalid tokenstream");
+        let gen_code: syn::File =
+            syn::parse2(self.0.generate(service)).expect("invalid tokenstream");
         let code_str = prettyplease::unparse(&gen_code);
         buf.push_str(&code_str);
     }

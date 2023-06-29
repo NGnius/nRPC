@@ -2,20 +2,24 @@
 pub trait ServerService {
     fn descriptor(&self) -> &'static str;
 
-    async fn call(&mut self,
-            method: &str,
-            input: bytes::Bytes,
-            output: &mut bytes::BytesMut) -> Result<(), ServiceError>;
+    async fn call(
+        &mut self,
+        method: &str,
+        input: bytes::Bytes,
+        output: &mut bytes::BytesMut,
+    ) -> Result<(), ServiceError>;
 }
 
 #[async_trait::async_trait]
 pub trait ClientHandler {
-    async fn call(&mut self,
-            package: &str,
-            service: &str,
-            method: &str,
-            input: bytes::Bytes,
-            output: &mut bytes::BytesMut) -> Result<(), ServiceError>;
+    async fn call(
+        &self,
+        package: &str,
+        service: &str,
+        method: &str,
+        input: bytes::Bytes,
+        output: &mut bytes::BytesMut,
+    ) -> Result<(), ServiceError>;
 }
 
 pub trait ClientService {

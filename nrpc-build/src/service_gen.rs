@@ -52,7 +52,8 @@ fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::
     let mut gen_method_match_arms = Vec::with_capacity(descriptors.len());
     for descriptor in descriptors {
         match (descriptor.client_streaming, descriptor.server_streaming) {
-            (false, false) => { // no streaming; 1->1
+            (false, false) => {
+                // no streaming; 1->1
                 let input_ty = quote::format_ident!("{}", descriptor.input_type);
                 let output_ty = quote::format_ident!("{}", descriptor.output_type);
                 let fn_name = quote::format_ident!("{}", descriptor.name);
@@ -63,25 +64,25 @@ fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::
                     }
                 );
 
-                gen_method_match_arms.push(
-                    quote! {
-                        #method_name => {
-                            Ok(self.#fn_name(#input_ty::decode(payload)?).await?.encode(buffer)?)
-                        }
+                gen_method_match_arms.push(quote! {
+                    #method_name => {
+                        Ok(self.#fn_name(#input_ty::decode(payload)?).await?.encode(buffer)?)
                     }
-                );
-            },
-            (true, false) => { // client streaming; 1 -> many
-                todo!("streaming not supported")
-            },
-            (false, true) => { // server streaming; many -> 1
+                });
+            }
+            (true, false) => {
+                // client streaming; 1 -> many
                 todo!("streaming not supported")
             }
-            (true, true) => { // all streaming; many -> many
+            (false, true) => {
+                // server streaming; many -> 1
                 todo!("streaming not supported")
-            },
+            }
+            (true, true) => {
+                // all streaming; many -> many
+                todo!("streaming not supported")
+            }
         }
-
     }
 
     quote! {
@@ -96,18 +97,23 @@ fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::
     }
 }
 
-fn struct_methods_client(package_name: &str, service_name: &str, descriptors: &Vec<prost_build::Method>) -> proc_macro2::TokenStream {
+fn struct_methods_client(
+    package_name: &str,
+    service_name: &str,
+    descriptors: &Vec<prost_build::Method>,
+) -> proc_macro2::TokenStream {
     let mut gen_methods = Vec::with_capacity(descriptors.len());
     for descriptor in descriptors {
         match (descriptor.client_streaming, descriptor.server_streaming) {
-            (false, false) => { // no streaming; 1->1
+            (false, false) => {
+                // no streaming; 1->1
                 let input_ty = quote::format_ident!("{}", descriptor.input_type);
                 let output_ty = quote::format_ident!("{}", descriptor.output_type);
                 let fn_name = quote::format_ident!("{}", descriptor.name);
                 let method_name = &descriptor.name;
                 gen_methods.push(
                     quote! {
-                        pub async fn #fn_name(&mut self, input: #input_ty) -> Result<#output_ty, ::nrpc::ServiceError> {
+                        pub async fn #fn_name(&self, input: #input_ty) -> Result<#output_ty, ::nrpc::ServiceError> {
                             let mut in_buf = ::nrpc::_helpers::bytes::BytesMut::new();
                             input.encode(&mut in_buf)?;
                             let mut out_buf = ::nrpc::_helpers::bytes::BytesMut::new();
@@ -116,18 +122,20 @@ fn struct_methods_client(package_name: &str, service_name: &str, descriptors: &V
                         }
                     }
                 );
-            },
-            (true, false) => { // client streaming; 1 -> many
-                todo!("streaming not supported")
-            },
-            (false, true) => { // server streaming; many -> 1
+            }
+            (true, false) => {
+                // client streaming; 1 -> many
                 todo!("streaming not supported")
             }
-            (true, true) => { // all streaming; many -> many
+            (false, true) => {
+                // server streaming; many -> 1
                 todo!("streaming not supported")
-            },
+            }
+            (true, true) => {
+                // all streaming; many -> many
+                todo!("streaming not supported")
+            }
         }
-
     }
 
     quote! {
@@ -143,20 +151,18 @@ fn generate_mod_rs(module_names: &Vec<String>, out_dir: &PathBuf) {
     });
     let gen_mods: syn::File = syn::parse2(quote! {
         #(#modules)*
-    }).expect("invalid tokenstream");
+    })
+    .expect("invalid tokenstream");
     let mod_str = prettyplease::unparse(&gen_mods);
-    std::fs::write(
-        out_dir
-            .join("mod.rs"),
-        &mod_str
-    ).expect("Failed to write to $OUT_DIR/mod.rs");
+    std::fs::write(out_dir.join("mod.rs"), &mod_str).expect("Failed to write to $OUT_DIR/mod.rs");
     //std::fs::write("/home/ngnius/potato.rs", &mod_str).unwrap();
 }
 
 impl ServiceGenerator for ProtobufServiceGenerator {
     fn generate(&mut self, service: Service, buf: &mut String) {
         if self.generate_server {
-            let service_mod_name = quote::format_ident!("{}_mod_server", service.name.to_lowercase());
+            let service_mod_name =
+                quote::format_ident!("{}_mod_server", service.name.to_lowercase());
             let service_trait_name = quote::format_ident!("{}Service", service.name);
             let service_trait_methods = trait_methods_server(&service.methods);
             let service_struct_name = quote::format_ident!("{}ServiceImpl", service.name);
@@ -210,8 +216,10 @@ impl ServiceGenerator for ProtobufServiceGenerator {
             buf.push_str(&code_str);
         }
         if self.generate_client {
-            let service_mod_name = quote::format_ident!("{}_mod_client", service.name.to_lowercase());
-            let service_methods = struct_methods_client(&service.package, &service.name, &service.methods);
+            let service_mod_name =
+                quote::format_ident!("{}_mod_client", service.name.to_lowercase());
+            let service_methods =
+                struct_methods_client(&service.package, &service.name, &service.methods);
             let service_struct_name = quote::format_ident!("{}Service", service.name);
             let descriptor_str = format!("{}.{}", service.package, service.name);
             let service_rename = quote::format_ident!("{}Client", service.name);
@@ -258,8 +266,8 @@ impl ServiceGenerator for ProtobufServiceGenerator {
     }
 
     fn finalize(&mut self, buf: &mut String) {
-        let mut client_tokens = quote!{};
-        let mut server_tokens = quote!{};
+        let mut client_tokens = quote! {};
+        let mut server_tokens = quote! {};
         if self.generate_client {
             let exports = &self.client_reexports;
             client_tokens = quote! {

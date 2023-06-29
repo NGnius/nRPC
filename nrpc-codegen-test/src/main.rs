@@ -1,7 +1,7 @@
 use std::error::Error;
 
-use prost::Message;
 use nrpc::ServerService;
+use prost::Message;
 
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/mod.rs"));
@@ -22,7 +22,10 @@ async fn main() {
     let mut input_buf = bytes::BytesMut::new();
     let mut output_buf = bytes::BytesMut::new();
     req.encode(&mut input_buf).unwrap();
-    service_impl.call("say_hello", input_buf.into(), &mut output_buf).await.unwrap();
+    service_impl
+        .call("say_hello", input_buf.into(), &mut output_buf)
+        .await
+        .unwrap();
     let actual_resp = helloworld::HelloReply::decode(output_buf).unwrap();
     assert_eq!(resp, actual_resp);
 
@@ -36,7 +39,10 @@ struct GreeterService;
 
 #[async_trait::async_trait]
 impl helloworld::IGreeter for GreeterService {
-    async fn say_hello(&mut self, input: helloworld::HelloRequest) -> Result<helloworld::HelloReply, Box<dyn Error>> {
+    async fn say_hello(
+        &mut self,
+        input: helloworld::HelloRequest,
+    ) -> Result<helloworld::HelloReply, Box<dyn Error>> {
         let result = helloworld::HelloReply {
             message: format!("Hello {}", input.name),
         };
@@ -49,16 +55,22 @@ struct ClientHandler;
 
 #[async_trait::async_trait]
 impl nrpc::ClientHandler for ClientHandler {
-    async fn call(&mut self,
-            package: &str,
-            service: &str,
-            method: &str,
-            input: bytes::Bytes,
-            output: &mut bytes::BytesMut) -> Result<(), nrpc::ServiceError> {
-                println!("call {}.{}/{} with data {:?}", package, service, method, input);
-                // This is ok to hardcode ONLY because it's for testing
-                Ok(helloworld::HelloReply {
-                    message: "Hello World".into(),
-                }.encode(output)?)
-            }
+    async fn call(
+        &mut self,
+        package: &str,
+        service: &str,
+        method: &str,
+        input: bytes::Bytes,
+        output: &mut bytes::BytesMut,
+    ) -> Result<(), nrpc::ServiceError> {
+        println!(
+            "call {}.{}/{} with data {:?}",
+            package, service, method, input
+        );
+        // This is ok to hardcode ONLY because it's for testing
+        Ok(helloworld::HelloReply {
+            message: "Hello World".into(),
+        }
+        .encode(output)?)
+    }
 }

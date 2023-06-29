@@ -1,6 +1,6 @@
 mod service;
 
-pub use service::{ServerService, ServiceError, ClientService, ClientHandler};
+pub use service::{ClientHandler, ClientService, ServerService, ServiceError};
 
 pub mod _helpers {
     pub use async_trait;

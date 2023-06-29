@@ -1,6 +1,6 @@
-use std::path::Path;
 use std::convert::AsRef;
 use std::iter::IntoIterator;
+use std::path::Path;
 
 use prost_build::Config;
 use prost_build::{Service, ServiceGenerator};
@@ -19,7 +19,7 @@ pub struct Transpiler<'a> {
 impl<'a> Transpiler<'a> {
     pub fn new(
         files: impl IntoIterator<Item = impl AsRef<Path>>,
-        includes: impl IntoIterator<Item = impl AsRef<Path>>
+        includes: impl IntoIterator<Item = impl AsRef<Path>>,
     ) -> Result<Self, impl std::error::Error> {
         let files: Vec<_> = files.into_iter().collect();
         for f in &files {
@@ -35,19 +35,28 @@ impl<'a> Transpiler<'a> {
 
     /// Generate client and server service implementations
     pub fn generate_all(mut self) -> Self {
-        self.service_generator.add_service(super::ProtobufServiceGenerator::all(std::env::var("OUT_DIR").unwrap().into()));
+        self.service_generator
+            .add_service(super::ProtobufServiceGenerator::all(
+                std::env::var("OUT_DIR").unwrap().into(),
+            ));
         self
     }
 
     /// Generate server services implementations
     pub fn generate_server(mut self) -> Self {
-        self.service_generator.add_service(super::ProtobufServiceGenerator::server(std::env::var("OUT_DIR").unwrap().into()));
+        self.service_generator
+            .add_service(super::ProtobufServiceGenerator::server(
+                std::env::var("OUT_DIR").unwrap().into(),
+            ));
         self
     }
 
     /// Generate client services implementations
     pub fn generate_client(mut self) -> Self {
-        self.service_generator.add_service(super::ProtobufServiceGenerator::client(std::env::var("OUT_DIR").unwrap().into()));
+        self.service_generator
+            .add_service(super::ProtobufServiceGenerator::client(
+                std::env::var("OUT_DIR").unwrap().into(),
+            ));
         self
     }
 
@@ -70,7 +79,10 @@ impl<'a> Transpiler<'a> {
         for mut pp in self.preprocessors {
             pp.process(&mut files, &mut generated);
         }
-        self.service_generator.add_service(PreprocessedCodeGenInjector { generated_str: generated });
+        self.service_generator
+            .add_service(PreprocessedCodeGenInjector {
+                generated_str: generated,
+            });
 
         self.prost_config
             .service_generator(Box::new(self.service_generator))
@@ -116,9 +128,10 @@ impl ServiceGenerator for MergedServiceGenerator {
 /// Compile proto files into Rust with server and client implementations
 pub fn compile(
     files: impl IntoIterator<Item = impl AsRef<Path>>,
-    includes: impl IntoIterator<Item = impl AsRef<Path>>
+    includes: impl IntoIterator<Item = impl AsRef<Path>>,
 ) {
-    Transpiler::new(files, includes).unwrap()
+    Transpiler::new(files, includes)
+        .unwrap()
         .generate_all()
         .transpile()
         .unwrap();
@@ -129,7 +142,8 @@ pub fn compile_clients(
     files: impl IntoIterator<Item = impl AsRef<Path>>,
     includes: impl IntoIterator<Item = impl AsRef<Path>>,
 ) {
-    Transpiler::new(files, includes).unwrap()
+    Transpiler::new(files, includes)
+        .unwrap()
         .generate_client()
         .transpile()
         .unwrap();
@@ -140,7 +154,8 @@ pub fn compile_servers(
     files: impl IntoIterator<Item = impl AsRef<Path>>,
     includes: impl IntoIterator<Item = impl AsRef<Path>>,
 ) {
-    Transpiler::new(files, includes).unwrap()
+    Transpiler::new(files, includes)
+        .unwrap()
         .generate_server()
         .transpile()
         .unwrap();
