@@ -47,40 +47,131 @@ impl ProtobufServiceGenerator {
     }
 }
 
+fn stream_type(item_type: &syn::Ident) -> proc_macro2::TokenStream {
+    quote::quote!{
+        ::nrpc::ServiceStream<'a, #item_type>
+    }
+}
+
+/*fn stream_type_static_lifetime(item_type: &syn::Ident) -> proc_macro2::TokenStream {
+    quote::quote!{
+        ::nrpc::ServiceStream<'static, #item_type>
+    }
+}*/
+
 fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::TokenStream {
     let mut gen_methods = Vec::with_capacity(descriptors.len());
     let mut gen_method_match_arms = Vec::with_capacity(descriptors.len());
     for descriptor in descriptors {
+        let input_ty = quote::format_ident!("{}", descriptor.input_type);
+        let output_ty = quote::format_ident!("{}", descriptor.output_type);
+        let fn_name = quote::format_ident!("{}", descriptor.name);
+        let method_name = &descriptor.name;
         match (descriptor.client_streaming, descriptor.server_streaming) {
             (false, false) => {
                 // no streaming; 1->1
-                let input_ty = quote::format_ident!("{}", descriptor.input_type);
-                let output_ty = quote::format_ident!("{}", descriptor.output_type);
-                let fn_name = quote::format_ident!("{}", descriptor.name);
-                let method_name = &descriptor.name;
                 gen_methods.push(
                     quote! {
-                        async fn #fn_name(&mut self, input: #input_ty) -> Result<#output_ty, Box<dyn std::error::Error>>;
+                        async fn #fn_name(&mut self, input: #input_ty) -> Result<#output_ty, Box<dyn std::error::Error + Send>>;
                     }
                 );
 
                 gen_method_match_arms.push(quote! {
                     #method_name => {
-                        Ok(self.#fn_name(#input_ty::decode(payload)?).await?.encode(buffer)?)
+                        if let Some(item1_payload) = stream_in.next().await {
+                            let item = #input_ty::decode(item1_payload?)?;
+                            // TODO does it need to be enforced that there are no more items in the stream?
+                            let mut buffer = ::nrpc::_helpers::bytes::BytesMut::new();
+                            self.#fn_name(item).await?.encode(&mut buffer)?;
+                            Ok(Box::new(::nrpc::OnceStream::once(Ok(buffer.freeze()))))
+                        } else {
+                            Err(::nrpc::ServiceError::StreamLength { want: 1, got: 0 })
+                        }
+                    }
+                });
+            }
+            (false, true) => {
+                // client streaming; 1 -> many
+                //let stream_out_ty = stream_type_static_lifetime(&output_ty);
+                let stream_out_ty = stream_type(&output_ty);
+                gen_methods.push(
+                    quote! {
+                        async fn #fn_name<'a>(&mut self, input: #input_ty) -> Result<#stream_out_ty, Box<dyn std::error::Error + Send>>;
+                    }
+                );
+
+                gen_method_match_arms.push(quote! {
+                    #method_name => {
+                        if let Some(item1_payload) = stream_in.next().await {
+                            let item = #input_ty::decode(item1_payload?)?;
+                            // TODO does it need to be enforced that there are no more items in the stream?
+                            let result = self.#fn_name(item).await?;
+                            Ok(Box::new(
+                                result.map(
+                                    |item_result| item_result.and_then(|item| {
+                                        let mut buffer = ::nrpc::_helpers::bytes::BytesMut::new();
+                                        item.encode(&mut buffer)
+                                            .map(|_| buffer.freeze())
+                                            .map_err(|e| ::nrpc::ServiceError::from(e))
+                                    })
+                                )
+                            ))
+                        } else {
+                            Err(::nrpc::ServiceError::StreamLength { want: 1, got: 0 })
+                        }
                     }
                 });
             }
             (true, false) => {
-                // client streaming; 1 -> many
-                todo!("streaming not supported")
-            }
-            (false, true) => {
                 // server streaming; many -> 1
-                todo!("streaming not supported")
+                let stream_in_ty = stream_type(&input_ty);
+                gen_methods.push(
+                    quote! {
+                        async fn #fn_name<'a>(&mut self, input: #stream_in_ty) -> Result<#output_ty, Box<dyn std::error::Error + Send>>;
+                    }
+                );
+
+                gen_method_match_arms.push(quote! {
+                    #method_name => {
+                        let item_stream = stream_in.map(|item_result| item_result.and_then(|item1_payload| {
+                            #input_ty::decode(item1_payload)
+                                .map_err(|e| ::nrpc::ServiceError::from(e))
+                        }));
+                        let mut buffer = ::nrpc::_helpers::bytes::BytesMut::new();
+                        self.#fn_name(Box::new(item_stream)).await?.encode(&mut buffer)?;
+                        Ok(Box::new(::nrpc::OnceStream::once(Ok(buffer.freeze()))))
+                    }
+                });
             }
             (true, true) => {
                 // all streaming; many -> many
-                todo!("streaming not supported")
+                let stream_in_ty = stream_type(&input_ty);
+                let stream_out_ty = stream_type(&output_ty);
+                gen_methods.push(
+                    quote! {
+                        async fn #fn_name<'a>(&mut self, input: #stream_in_ty) -> Result<#stream_out_ty, Box<dyn std::error::Error + Send>>;
+                    }
+                );
+
+                gen_method_match_arms.push(quote! {
+                    #method_name => {
+                        let item_stream = stream_in.map(|item_result| item_result.and_then(|item1_payload| {
+                            #input_ty::decode(item1_payload)
+                                .map_err(|e| ::nrpc::ServiceError::from(e))
+                        }));
+                        let result = self.#fn_name(Box::new(item_stream)).await?;
+                        Ok(Box::new(
+                            result.map(
+                                |item_result| item_result.and_then(|item| {
+                                    let mut buffer = ::nrpc::_helpers::bytes::BytesMut::new();
+                                    item.encode(&mut buffer)
+                                        .map(|_| buffer.freeze())
+                                        .map_err(|e| ::nrpc::ServiceError::from(e))
+                                })
+                            )
+                        ))
+                    }
+                });
             }
         }
     }
@@ -88,7 +179,18 @@ fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::
     quote! {
         #(#gen_methods)*
 
-        async fn call(&mut self, method: &str, payload: ::nrpc::_helpers::bytes::Bytes, buffer: &mut ::nrpc::_helpers::bytes::BytesMut) -> Result<(), ::nrpc::ServiceError> {
+        /*async fn call(&mut self, method: &str, payload: ::nrpc::_helpers::bytes::Bytes, buffer: &mut ::nrpc::_helpers::bytes::BytesMut) -> Result<(), ::nrpc::ServiceError> {
+            match method {
+                #(#gen_method_match_arms)*
+                _ => Err(::nrpc::ServiceError::MethodNotFound)
+            }
+        }*/
+
+        async fn call<'a>(
+            &mut self,
+            method: &str,
+            mut stream_in: ::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>,
+        ) -> Result<::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>, ::nrpc::ServiceError> {
             match method {
                 #(#gen_method_match_arms)*
                 _ => Err(::nrpc::ServiceError::MethodNotFound)
@@ -104,36 +206,99 @@ fn struct_methods_client(
 ) -> proc_macro2::TokenStream {
     let mut gen_methods = Vec::with_capacity(descriptors.len());
     for descriptor in descriptors {
+        let input_ty = quote::format_ident!("{}", descriptor.input_type);
+        let output_ty = quote::format_ident!("{}", descriptor.output_type);
+        let fn_name = quote::format_ident!("{}", descriptor.name);
+        let method_name = &descriptor.name;
         match (descriptor.client_streaming, descriptor.server_streaming) {
             (false, false) => {
                 // no streaming; 1->1
-                let input_ty = quote::format_ident!("{}", descriptor.input_type);
-                let output_ty = quote::format_ident!("{}", descriptor.output_type);
-                let fn_name = quote::format_ident!("{}", descriptor.name);
-                let method_name = &descriptor.name;
                 gen_methods.push(
                     quote! {
                         pub async fn #fn_name(&self, input: #input_ty) -> Result<#output_ty, ::nrpc::ServiceError> {
                             let mut in_buf = ::nrpc::_helpers::bytes::BytesMut::new();
                             input.encode(&mut in_buf)?;
-                            let mut out_buf = ::nrpc::_helpers::bytes::BytesMut::new();
-                            self.inner.call(#package_name, #service_name, #method_name, in_buf.into(), &mut out_buf).await?;
-                            Ok(#output_ty::decode(out_buf)?)
+                            let in_stream = ::nrpc::OnceStream::once(Ok(in_buf.freeze()));
+                            let mut result_stream = self.inner.call(#package_name, #service_name, #method_name, Box::new( in_stream)).await?;
+                            if let Some(out_result) = result_stream.next().await {
+                                Ok(#output_ty::decode(out_result?)?)
+                            } else {
+                                Err(::nrpc::ServiceError::StreamLength { want: 1, got: 0 })
+                            }
+
+                        }
+                    }
+                );
+            }
+            (false, true) => {
+                // client streaming; 1 -> many
+                let stream_out_ty = stream_type(&output_ty);
+                gen_methods.push(
+                    quote! {
+                        pub async fn #fn_name<'a>(&self, input: #input_ty) -> Result<#stream_out_ty, ::nrpc::ServiceError> {
+                            let mut in_buf = ::nrpc::_helpers::bytes::BytesMut::new();
+                            input.encode(&mut in_buf)?;
+                            let in_stream = ::nrpc::OnceStream::once(Ok(in_buf.freeze()));
+                            let result_stream = self.inner.call(#package_name, #service_name, #method_name, Box::new(in_stream)).await?;
+                            let item_stream = result_stream.map(|out_result|
+                                out_result.and_then(|out_buf| #output_ty::decode(out_buf)
+                                    .map_err(|e| ::nrpc::ServiceError::from(e))
+                                )
+                            );
+                            Ok(Box::new(item_stream))
                         }
                     }
                 );
             }
             (true, false) => {
-                // client streaming; 1 -> many
-                todo!("streaming not supported")
-            }
-            (false, true) => {
                 // server streaming; many -> 1
-                todo!("streaming not supported")
+                let stream_in_ty = stream_type(&input_ty);
+                gen_methods.push(
+                    quote! {
+                        pub async fn #fn_name<'a>(&self, input: #stream_in_ty) -> Result<#output_ty, ::nrpc::ServiceError> {
+                            let in_stream = input.map(|item_result| {
+                                let mut in_buf = ::nrpc::_helpers::bytes::BytesMut::new();
+                                item_result.and_then(|item| item.encode(&mut in_buf)
+                                    .map(|_| in_buf.freeze())
+                                    .map_err(|e| ::nrpc::ServiceError::from(e))
+                                )
+                            });
+                            let mut result_stream = self.inner.call(#package_name, #service_name, #method_name, Box::new(in_stream)).await?;
+                            if let Some(out_result) = result_stream.next().await {
+                                Ok(#output_ty::decode(out_result?)?)
+                            } else {
+                                Err(::nrpc::ServiceError::StreamLength { want: 1, got: 0 })
+                            }
+
+                        }
+                    }
+                );
             }
             (true, true) => {
                 // all streaming; many -> many
-                todo!("streaming not supported")
+                let stream_in_ty = stream_type(&input_ty);
+                let stream_out_ty = stream_type(&output_ty);
+                gen_methods.push(
+                    quote! {
+                        pub async fn #fn_name<'a>(&self, input: #stream_in_ty) -> Result<#stream_out_ty, ::nrpc::ServiceError> {
+                            let in_stream = input.map(|item_result| {
+                                let mut in_buf = ::nrpc::_helpers::bytes::BytesMut::new();
+                                item_result.and_then(|item| item.encode(&mut in_buf)
+                                    .map(|_| in_buf.freeze())
+                                    .map_err(|e| ::nrpc::ServiceError::from(e))
+                                )
+                            });
+                            let result_stream = self.inner.call(#package_name, #service_name, #method_name, Box::new(in_stream)).await?;
+                            let item_stream = result_stream.map(|out_result|
+                                out_result.and_then(|out_buf| #output_ty::decode(out_buf)
+                                    .map_err(|e| ::nrpc::ServiceError::from(e))
+                                )
+                            );
+                            Ok(Box::new(item_stream))
+
+                        }
+                    }
+                );
             }
         }
     }
@@ -174,6 +339,7 @@ impl ServiceGenerator for ProtobufServiceGenerator {
                     use super::*;
                     use ::nrpc::_helpers::async_trait::async_trait;
                     use ::nrpc::_helpers::prost::Message;
+                    use ::nrpc::_helpers::futures::StreamExt;
 
                     #[async_trait]
                     pub trait #service_trait_name: Send {
@@ -198,8 +364,12 @@ impl ServiceGenerator for ProtobufServiceGenerator {
                             #descriptor_str
                         }
 
-                        async fn call(&mut self, method: &str, payload: ::nrpc::_helpers::bytes::Bytes, buffer: &mut ::nrpc::_helpers::bytes::BytesMut) -> Result<(), ::nrpc::ServiceError> {
-                            self.inner.call(method, payload, buffer).await
+                        async fn call<'a>(
+                            &mut self,
+                            method: &str,
+                            input: ::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>,
+                        ) -> Result<::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>, ::nrpc::ServiceError> {
+                            self.inner.call(method, input).await
                         }
                     }
                 }
@@ -227,6 +397,7 @@ impl ServiceGenerator for ProtobufServiceGenerator {
                 mod #service_mod_name {
                     use super::*;
                     use ::nrpc::_helpers::prost::Message;
+                    use ::nrpc::_helpers::futures::StreamExt;
 
                     //#[derive(core::any::Any)]
                     pub struct #service_struct_name<T: ::nrpc::ClientHandler> {
