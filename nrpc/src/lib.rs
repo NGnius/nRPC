@@ -1,7 +1,7 @@
 mod service;
 mod stream_utils;
 
-pub use service::{ClientHandler, ClientService, ServerService, ServiceError, ServiceStream};
+pub use service::{ClientHandler, ClientService, ServerService, ServiceError, ServiceClientStream, ServiceServerStream};
 
 pub use stream_utils::{EmptyStream, OnceStream, VecStream};
 

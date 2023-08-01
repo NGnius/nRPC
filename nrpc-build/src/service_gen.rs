@@ -47,9 +47,15 @@ impl ProtobufServiceGenerator {
     }
 }
 
-fn stream_type(item_type: &syn::Ident) -> proc_macro2::TokenStream {
+fn stream_server_type(item_type: &syn::Ident) -> proc_macro2::TokenStream {
     quote::quote!{
-        ::nrpc::ServiceStream<'a, #item_type>
+        ::nrpc::ServiceServerStream<'a, #item_type>
+    }
+}
+
+fn stream_client_type(item_type: &syn::Ident) -> proc_macro2::TokenStream {
+    quote::quote!{
+        ::nrpc::ServiceClientStream<'a, #item_type>
     }
 }
 
@@ -93,10 +99,10 @@ fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::
             (false, true) => {
                 // client streaming; 1 -> many
                 //let stream_out_ty = stream_type_static_lifetime(&output_ty);
-                let stream_out_ty = stream_type(&output_ty);
+                let stream_out_ty = stream_server_type(&output_ty);
                 gen_methods.push(
                     quote! {
-                        async fn #fn_name<'a>(&mut self, input: #input_ty) -> Result<#stream_out_ty, Box<dyn std::error::Error + Send>>;
+                        async fn #fn_name<'a: 'b>(&mut self, input: #input_ty) -> Result<#stream_out_ty, Box<dyn std::error::Error + Send>>;
                     }
                 );
 
@@ -124,10 +130,10 @@ fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::
             }
             (true, false) => {
                 // server streaming; many -> 1
-                let stream_in_ty = stream_type(&input_ty);
+                let stream_in_ty = stream_server_type(&input_ty);
                 gen_methods.push(
                     quote! {
-                        async fn #fn_name<'a>(&mut self, input: #stream_in_ty) -> Result<#output_ty, Box<dyn std::error::Error + Send>>;
+                        async fn #fn_name<'a: 'b>(&mut self, input: #stream_in_ty) -> Result<#output_ty, Box<dyn std::error::Error + Send>>;
                     }
                 );
 
@@ -145,11 +151,11 @@ fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::
             }
             (true, true) => {
                 // all streaming; many -> many
-                let stream_in_ty = stream_type(&input_ty);
-                let stream_out_ty = stream_type(&output_ty);
+                let stream_in_ty = stream_server_type(&input_ty);
+                let stream_out_ty = stream_server_type(&output_ty);
                 gen_methods.push(
                     quote! {
-                        async fn #fn_name<'a>(&mut self, input: #stream_in_ty) -> Result<#stream_out_ty, Box<dyn std::error::Error + Send>>;
+                        async fn #fn_name<'a: 'b>(&mut self, input: #stream_in_ty) -> Result<#stream_out_ty, Box<dyn std::error::Error + Send>>;
                     }
                 );
 
@@ -186,11 +192,11 @@ fn trait_methods_server(descriptors: &Vec<prost_build::Method>) -> proc_macro2::
             }
         }*/
 
-        async fn call<'a>(
+        async fn call<'a: 'b>(
             &mut self,
             method: &str,
-            mut stream_in: ::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>,
-        ) -> Result<::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>, ::nrpc::ServiceError> {
+            mut stream_in: ::nrpc::ServiceServerStream<'a, ::nrpc::_helpers::bytes::Bytes>,
+        ) -> Result<::nrpc::ServiceServerStream<'a, ::nrpc::_helpers::bytes::Bytes>, ::nrpc::ServiceError> {
             match method {
                 #(#gen_method_match_arms)*
                 _ => Err(::nrpc::ServiceError::MethodNotFound)
@@ -232,10 +238,10 @@ fn struct_methods_client(
             }
             (false, true) => {
                 // client streaming; 1 -> many
-                let stream_out_ty = stream_type(&output_ty);
+                let stream_out_ty = stream_client_type(&output_ty);
                 gen_methods.push(
                     quote! {
-                        pub async fn #fn_name<'a>(&self, input: #input_ty) -> Result<#stream_out_ty, ::nrpc::ServiceError> {
+                        pub async fn #fn_name<'a: 'b>(&self, input: #input_ty) -> Result<#stream_out_ty, ::nrpc::ServiceError> {
                             let mut in_buf = ::nrpc::_helpers::bytes::BytesMut::new();
                             input.encode(&mut in_buf)?;
                             let in_stream = ::nrpc::OnceStream::once(Ok(in_buf.freeze()));
@@ -252,10 +258,10 @@ fn struct_methods_client(
             }
             (true, false) => {
                 // server streaming; many -> 1
-                let stream_in_ty = stream_type(&input_ty);
+                let stream_in_ty = stream_client_type(&input_ty);
                 gen_methods.push(
                     quote! {
-                        pub async fn #fn_name<'a>(&self, input: #stream_in_ty) -> Result<#output_ty, ::nrpc::ServiceError> {
+                        pub async fn #fn_name<'a: 'b>(&self, input: #stream_in_ty) -> Result<#output_ty, ::nrpc::ServiceError> {
                             let in_stream = input.map(|item_result| {
                                 let mut in_buf = ::nrpc::_helpers::bytes::BytesMut::new();
                                 item_result.and_then(|item| item.encode(&mut in_buf)
@@ -276,11 +282,11 @@ fn struct_methods_client(
             }
             (true, true) => {
                 // all streaming; many -> many
-                let stream_in_ty = stream_type(&input_ty);
-                let stream_out_ty = stream_type(&output_ty);
+                let stream_in_ty = stream_client_type(&input_ty);
+                let stream_out_ty = stream_client_type(&output_ty);
                 gen_methods.push(
                     quote! {
-                        pub async fn #fn_name<'a>(&self, input: #stream_in_ty) -> Result<#stream_out_ty, ::nrpc::ServiceError> {
+                        pub async fn #fn_name<'a: 'b>(&self, input: #stream_in_ty) -> Result<#stream_out_ty, ::nrpc::ServiceError> {
                             let in_stream = input.map(|item_result| {
                                 let mut in_buf = ::nrpc::_helpers::bytes::BytesMut::new();
                                 item_result.and_then(|item| item.encode(&mut in_buf)
@@ -342,33 +348,35 @@ impl ServiceGenerator for ProtobufServiceGenerator {
                     use ::nrpc::_helpers::futures::StreamExt;
 
                     #[async_trait]
-                    pub trait #service_trait_name: Send {
+                    pub trait #service_trait_name<'b>: Send {
                         #service_trait_methods
                     }
 
-                    pub struct #service_struct_name<T: #service_trait_name> {
+                    pub struct #service_struct_name<'b, T: #service_trait_name<'b>> {
                         inner: T,
+                        _idc: std::marker::PhantomData<&'b ()>,
                     }
 
-                    impl <T: #service_trait_name> #service_struct_name<T> {
+                    impl <'b, T: #service_trait_name<'b>> #service_struct_name<'b, T> {
                         pub fn new(inner: T) -> Self {
                             Self {
                                 inner,
+                                _idc: Default::default(),
                             }
                         }
                     }
 
                     #[async_trait]
-                    impl<T: #service_trait_name> ::nrpc::ServerService for #service_struct_name<T> {
+                    impl<'b, T: #service_trait_name<'b>> ::nrpc::ServerService<'b> for #service_struct_name<'b, T> {
                         fn descriptor(&self) -> &'static str {
                             #descriptor_str
                         }
 
-                        async fn call<'a>(
+                        async fn call<'a: 'b>(
                             &mut self,
                             method: &str,
-                            input: ::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>,
-                        ) -> Result<::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>, ::nrpc::ServiceError> {
+                            input: ::nrpc::ServiceServerStream<'a, ::nrpc::_helpers::bytes::Bytes>,
+                        ) -> Result<::nrpc::ServiceServerStream<'a, ::nrpc::_helpers::bytes::Bytes>, ::nrpc::ServiceError> {
                             self.inner.call(method, input).await
                         }
                     }
@@ -400,20 +408,22 @@ impl ServiceGenerator for ProtobufServiceGenerator {
                     use ::nrpc::_helpers::futures::StreamExt;
 
                     //#[derive(core::any::Any)]
-                    pub struct #service_struct_name<T: ::nrpc::ClientHandler> {
+                    pub struct #service_struct_name<'b, T: ::nrpc::ClientHandler<'b>> {
                         inner: T,
+                        _idc: std::marker::PhantomData<&'b ()>,
                     }
 
-                    impl <T: ::nrpc::ClientHandler> ::nrpc::ClientService for #service_struct_name<T> {
+                    impl <'b, T: ::nrpc::ClientHandler<'b>> ::nrpc::ClientService for #service_struct_name<'b, T> {
                         fn descriptor(&self) -> &'static str {
                             #descriptor_str
                         }
                     }
 
-                    impl <T: ::nrpc::ClientHandler> #service_struct_name<T> {
+                    impl <'b, T: ::nrpc::ClientHandler<'b>> #service_struct_name<'b, T> {
                         pub fn new(inner: T) -> Self {
                             Self {
                                 inner,
+                                _idc: Default::default(),
                             }
                         }
 

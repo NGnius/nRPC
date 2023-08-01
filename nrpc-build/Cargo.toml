@@ -1,6 +1,6 @@
 [package]
 name = "nrpc-build"
-version = "0.8.0"
+version = "0.10.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/NGnius/nRPC"
@@ -21,4 +21,4 @@ quote = "1.0"
 syn = "2.0"
 proc-macro2 = "1.0"
 
-nrpc = { version = "0.8", path = "../nrpc" }
+nrpc = { version = "0.10", path = "../nrpc" }

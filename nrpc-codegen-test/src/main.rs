@@ -131,7 +131,7 @@ async fn main() {
 struct GreeterService;
 
 #[async_trait::async_trait]
-impl helloworld::IGreeter for GreeterService {
+impl helloworld::IGreeter<'_> for GreeterService {
     async fn say_hello(
         &mut self,
         input: helloworld::HelloRequest,
@@ -147,7 +147,7 @@ impl helloworld::IGreeter for GreeterService {
         &mut self,
         input: helloworld::HelloRequest,
     ) -> Result<
-        ::nrpc::ServiceStream<'a, helloworld::HelloReply>,
+        ::nrpc::ServiceServerStream<'a, helloworld::HelloReply>,
         Box<dyn std::error::Error + Send>,
     > {
         let result = helloworld::HelloReply {
@@ -159,7 +159,7 @@ impl helloworld::IGreeter for GreeterService {
 
     async fn say_hello_many_to_one<'a>(
         &mut self,
-        mut input: ::nrpc::ServiceStream<'a, helloworld::HelloRequest>,
+        mut input: ::nrpc::ServiceServerStream<'a, helloworld::HelloRequest>,
     ) -> Result<helloworld::HelloReply, Box<dyn Error + Send>>{
         let mut message = "Hello ".to_string();
         while let Some(item_result) = input.next().await {
@@ -173,9 +173,9 @@ impl helloworld::IGreeter for GreeterService {
 
     async fn say_hello_many_to_many<'a>(
         &mut self,
-        input: ::nrpc::ServiceStream<'a, helloworld::HelloRequest>,
+        input: ::nrpc::ServiceServerStream<'a, helloworld::HelloRequest>,
     ) -> Result<
-        ::nrpc::ServiceStream<'a, helloworld::HelloReply>,
+        ::nrpc::ServiceServerStream<'a, helloworld::HelloReply>,
         Box<dyn std::error::Error + Send>,
     >{
         Ok(Box::new(input.map(|item_result| item_result.map(|input| {
@@ -191,7 +191,7 @@ impl helloworld::IGreeter for GreeterService {
 struct ClientHandler;
 
 #[async_trait::async_trait]
-impl nrpc::ClientHandler for ClientHandler {
+impl nrpc::ClientHandler<'_> for ClientHandler {
     /*async fn call(
         &mut self,
         package: &str,
@@ -216,8 +216,8 @@ impl nrpc::ClientHandler for ClientHandler {
         package: &str,
         service: &str,
         method: &str,
-        input: ::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>,
-    ) -> Result<::nrpc::ServiceStream<'a, ::nrpc::_helpers::bytes::Bytes>, ServiceError> {
+        input: ::nrpc::ServiceClientStream<'a, ::nrpc::_helpers::bytes::Bytes>,
+    ) -> Result<::nrpc::ServiceClientStream<'a, ::nrpc::_helpers::bytes::Bytes>, ServiceError> {
         println!(
             "call {}.{}/{} with data stream",
             package, service, method
